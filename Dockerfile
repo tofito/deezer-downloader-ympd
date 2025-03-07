@@ -34,7 +34,7 @@ RUN pip install deezer_downloader*.whl && \
     sed -i 's,host = 127.0.0.1,host = 0.0.0.0,' /etc/deezer-downloader.ini && \
     sed -i 's,/tmp/deezer-downloader,/mnt/deezer-downloader,' /etc/deezer-downloader.ini && \
     rm deezer_downloader*.whl
-RUN pip install mopidy spotify-web-downloader
+RUN pip install mopidy spotify-web-downloader mutagen
 
 #ADD deezer_downloader/spotify.py /usr/local/lib/python3.10/site-packages/deezer_downloader/
 #ADD deezer_downloader/web/music_backend.py /usr/local/lib/python3.10/site-packages/deezer_downloader/web/
