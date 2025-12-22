@@ -7,10 +7,10 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 from deezer_downloader.configuration import config
 from deezer_downloader.youtubedl import youtubedl_download
-from deezer_downloader.spotify import get_songs_from_spotify_website,do_download_by_playlist_url
+from deezer_downloader.spotify import get_songs_from_spotify_website
 from deezer_downloader.deezer import TYPE_TRACK, TYPE_ALBUM, TYPE_PLAYLIST, get_song_infos_from_deezer_website, download_song, parse_deezer_playlist, deezer_search, get_deezer_favorites
 from deezer_downloader.deezer import Deezer403Exception, Deezer404Exception
-
+from deezer_downloader.deezer import get_file_extension
 
 from deezer_downloader.threadpool_queue import ThreadpoolScheduler, report_progress
 sched = ThreadpoolScheduler()
@@ -48,7 +48,7 @@ def update_mpd_db(songs, add_to_playlist):
         return
     mpd_client.update()
     if add_to_playlist:
-        songs = [songs] if type(songs) != list else songs
+        songs = [songs] if type(songs) is not list else songs
         songs = make_song_paths_relative_to_mpd_root(songs)
         while len(mpd_client.search("file", songs[0])) == 0:
             # c.update() does not block so wait for it
@@ -78,13 +78,17 @@ def clean_filename(path):
 
 
 def download_song_and_get_absolute_filename(search_type, song, playlist_name=None):
+
+    file_extension = get_file_extension()
     if search_type == TYPE_ALBUM:
-        song_filename = "{:02d} - {} {}.mp3".format(int(song['TRACK_NUMBER']),
-                                                    song['ART_NAME'],
-                                                    song['SNG_TITLE'])
+        song_filename = "{:02d} - {} {}.{}".format(int(song['TRACK_NUMBER']),
+                                                   song['ART_NAME'],
+                                                   song['SNG_TITLE'],
+                                                   file_extension)
     else:
-        song_filename = "{} - {}.mp3".format(song['ART_NAME'],
-                                             song['SNG_TITLE'])
+        song_filename = "{} - {}.{}".format(song['ART_NAME'],
+                                            song['SNG_TITLE'],
+                                            file_extension)
     song_filename = clean_filename(song_filename)
 
     if search_type == TYPE_TRACK:
@@ -97,7 +101,7 @@ def download_song_and_get_absolute_filename(search_type, song, playlist_name=Non
             os.mkdir(album_dir)
         absolute_filename = os.path.join(album_dir, song_filename)
     elif search_type == TYPE_PLAYLIST:
-        assert type(playlist_name) == str
+        assert type(playlist_name) is str
         playlist_name = clean_filename(playlist_name)
         playlist_dir = os.path.join(config["download_dirs"]["playlists"], playlist_name)
         if not os.path.exists(playlist_dir):
@@ -134,8 +138,7 @@ def create_m3u8_file(songs_absolute_location):
     m3u8_filename = "00 {}.m3u8".format(os.path.basename(playlist_directory))
     print("Creating m3u8 file: '{}'".format(m3u8_filename))
     m3u8_file_abs = os.path.join(playlist_directory, m3u8_filename)
-    print(m3u8_file_abs)
-    with open(m3u8_file_abs, "w") as f:
+    with open(m3u8_file_abs, "w", encoding="utf-8") as f:
         for song in songs_absolute_location:
             if os.path.exists(song):
                 f.write(basename(song) + "\n")
@@ -158,9 +161,12 @@ def download_deezer_album_and_queue_and_zip(album_id, add_to_playlist, create_zi
     songs_absolute_location = []
     for i, song in enumerate(songs):
         report_progress(i, len(songs))
-        assert type(song) == dict
-        absolute_filename = download_song_and_get_absolute_filename(TYPE_ALBUM, song)
-        songs_absolute_location.append(absolute_filename)
+        assert type(song) is dict
+        try:
+            absolute_filename = download_song_and_get_absolute_filename(TYPE_ALBUM, song)
+            songs_absolute_location.append(absolute_filename)
+        except Exception as e:
+            print(f"Warning: {e}. Continuing with album...")
     update_mpd_db(songs_absolute_location, add_to_playlist)
     if create_zip:
         return [create_zip_file(songs_absolute_location)]
@@ -173,8 +179,11 @@ def download_deezer_playlist_and_queue_and_zip(playlist_id, add_to_playlist, cre
     songs_absolute_location = []
     for i, song in enumerate(songs):
         report_progress(i, len(songs))
-        absolute_filename = download_song_and_get_absolute_filename(TYPE_PLAYLIST, song, playlist_name)
-        songs_absolute_location.append(absolute_filename)
+        try:
+            absolute_filename = download_song_and_get_absolute_filename(TYPE_PLAYLIST, song, playlist_name)
+            songs_absolute_location.append(absolute_filename)
+        except Exception as e:
+            print(f"Warning: {e}. Continuing with playlist...")
     update_mpd_db(songs_absolute_location, add_to_playlist)
     songs_with_m3u8_file = create_m3u8_file(songs_absolute_location)
     if create_zip:
@@ -184,39 +193,25 @@ def download_deezer_playlist_and_queue_and_zip(playlist_id, add_to_playlist, cre
 
 @sched.register_command()
 def download_spotify_playlist_and_queue_and_zip(playlist_name, playlist_id, add_to_playlist, create_zip):
-    # fix this here
-
-    playlist_dir = os.path.join(config["download_dirs"]["playlists"], playlist_name)
-    if not os.path.exists(playlist_dir):
-        os.mkdir(playlist_dir)
-    #absolute_filename = os.path.join(playlist_dir, song_filename)
-
-
-    songs_location = do_download_by_playlist_url(playlist_id, playlist_dir)
-
-    print(songs_location)
-
-    #songs = get_songs_from_spotify_website(playlist_id,
-    #                                        config["proxy"]["server"])
-    #songs_absolute_location = []
-    #print(f"We got {len(songs)} songs from the Spotify playlist")
-    #for i, song_of_playlist in enumerate(songs):
-    #    report_progress(i, len(songs))
-    #    # song_of_playlist: string (artist - song)
-    #    try:
-    #        track_id = deezer_search(song_of_playlist, TYPE_TRACK)[0]['id'] #[0] can throw IndexError
-    #        song = get_song_infos_from_deezer_website(TYPE_TRACK, track_id)
-    #        absolute_filename = download_song_and_get_absolute_filename(TYPE_PLAYLIST, song, playlist_name)
-    #        songs_absolute_location.append(absolute_filename)
-    #    except (IndexError, Deezer403Exception, Deezer404Exception) as msg:
-    #        print(msg)
-    #        print(f"Could not find Spotify song ({song_of_playlist}) on Deezer?")
-    #        # return
-    update_mpd_db(songs_location, add_to_playlist)
-    songs_with_m3u8_file = create_m3u8_file(songs_location)
+    songs = get_songs_from_spotify_website(playlist_id,
+                                           config["proxy"]["server"])
+    songs_absolute_location = []
+    print(f"We got {len(songs)} songs from the Spotify playlist")
+    for i, song_of_playlist in enumerate(songs):
+        report_progress(i, len(songs))
+        # song_of_playlist: string (artist - song)
+        try:
+            track_id = deezer_search(song_of_playlist, TYPE_TRACK)[0]['id'] #[0] can throw IndexError
+            song = get_song_infos_from_deezer_website(TYPE_TRACK, track_id)
+            absolute_filename = download_song_and_get_absolute_filename(TYPE_PLAYLIST, song, playlist_name)
+            songs_absolute_location.append(absolute_filename)
+        except Exception as e:
+            print(f"Warning: Could not download Spotify song ({song_of_playlist}) on Deezer: {e}")
+    update_mpd_db(songs_absolute_location, add_to_playlist)
+    songs_with_m3u8_file = create_m3u8_file(songs_absolute_location)
     if create_zip:
         return [create_zip_file(songs_with_m3u8_file)]
-    return make_song_paths_relative_to_mpd_root(songs_location)
+    return make_song_paths_relative_to_mpd_root(songs_absolute_location)
 
 
 @sched.register_command()
@@ -237,8 +232,11 @@ def download_deezer_favorites(user_id: str, add_to_playlist: bool, create_zip: b
         report_progress(i, len(favorite_songs))
         try:
             song = get_song_infos_from_deezer_website(TYPE_TRACK, fav_song)
-            absolute_filename = download_song_and_get_absolute_filename(TYPE_PLAYLIST, song, output_directory)
-            songs_absolute_location.append(absolute_filename)
+            try:
+                absolute_filename = download_song_and_get_absolute_filename(TYPE_PLAYLIST, song, output_directory)
+                songs_absolute_location.append(absolute_filename)
+            except Exception as e:
+                print(f"Warning: {e}. Continuing with favorties...")
         except (IndexError, Deezer403Exception, Deezer404Exception) as msg:
             print(msg)
             print(f"Could not find song ({fav_song}) on Deezer?")

@@ -1,11 +1,10 @@
-FROM python:3.10-alpine3.17 AS builder
+FROM python:3.12-alpine3.21 AS builder
 RUN pip install poetry
-RUN apk add --no-cache g++ make cmake libmpdclient-dev openssl-dev git
 COPY . /app
 WORKDIR /app
 RUN poetry build --format=wheel
 WORKDIR /
-RUN apk add --no-cache patch
+RUN apk add --no-cache build-base g++ cmake libmpdclient-dev openssl-dev git
 RUN git clone https://github.com/SuperBFG7/ympd && \
     cd /ympd && \
     patch -p 1 < /app/deployment/fix_header.patch && \
@@ -13,15 +12,15 @@ RUN git clone https://github.com/SuperBFG7/ympd && \
     cmake .. -DCMAKE_INSTALL_PREFIX:PATH=/usr && make
 
 FROM rust:latest as rusty
-RUN apt-get install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git
+RUN apt-get update && apt-get install -y libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gcc pkg-config git
 RUN git clone --depth 1 https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs && \
     cd gst-plugins-rs && \
     cargo build --package gst-plugin-spotify --release
 
-FROM python:3.10-alpine3.17
+FROM python:3.12-alpine3.21
 ENV PYTHONUNBUFFERED=TRUE
 
-RUN apk add --no-cache ffmpeg nginx mpd supervisor libmpdclient openssl ffmpeg aria2 && \
+RUN apk add --no-cache ffmpeg nginx mpd supervisor libmpdclient openssl ffmpeg aria2 gst-plugins-base gst-plugins-good gst-plugins-ugly && \
     adduser -D deezer 
 
 COPY --from=0 /ympd/build/ympd /usr/bin/ympd
