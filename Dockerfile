@@ -45,7 +45,9 @@ ADD mpd.conf /etc/mpd.conf
 ADD deezer-downloader.ini /etc/deezer-downloader.ini
 ADD deployment/music-nginx.conf /etc/nginx/http.d/
 RUN rm /etc/nginx/http.d/default.conf
-
+RUN mkdir -p ./log/supervisord
+RUN mkdir -p ./mpd/playlists
+RUN chmod -R 777 mpd log 
 EXPOSE 5000
 #ENTRYPOINT ["/usr/local/bin/deezer-downloader", "--config", "/etc/deezer-downloader.ini"]
 ENTRYPOINT ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
